@@ -5,15 +5,18 @@
  * License: MIT
  */
 angular.module('mb-scrollbar', [])
-.directive('mbScrollbar', function() {
+    .directive('mbScrollbar', function() {
     return {
         restrict: 'A',
         transclude: true,
         scope: {
-            config: '=mbScrollbar'
+            config: '=mbScrollbar',
+            mbScroll: '&',
+            mbDistance: '=',
+            mbStopScroll: '='
         },
         template: "<div class='ngscroll-resizable' style='position: relative; width: 100%; height: 100%;'> <div class='ngscroll-container' style='width: 100%; height: 100%;' ng-transclude></div> <div class='ngscroll-scrollbar-container' ng-style='styles.scrollbarContainer'><div class='ngscroll-scrollbar' ng-style='styles.scrollbar'></div></div> </div>",
-        link: function(scope, element) {
+        link: function(scope, element, attr) {
 
             // Helper functions
             function ifVertElseHor(vertical, horizontal) {
@@ -30,6 +33,10 @@ angular.module('mb-scrollbar', [])
                     }
                 }
                 return baseObject;
+            }
+            var valor = 1;
+            function changeValor(val) {
+                valor = val;
             }
 
             // Base Configuration
@@ -99,13 +106,17 @@ angular.module('mb-scrollbar', [])
             function scroll(distance) {
                 var margin = 'margin-'+config.position;
                 var newMargin = parseInt( child.css(margin) || 0 ) + distance;
-
                 scrollTo(newMargin);
             }
 
             function scrollTo(position) {
                 var margin = 'margin-'+config.position;
                 var newMargin = Math.min( 0, Math.max( position, -length + containerSize ) );
+                var distanceToBottom = ((newMargin + length) - containerSize);
+                //                console.log(distanceToBottom);
+                if((distanceToBottom <= scope.mbDistance) && !scope.mbStopScroll) {
+                    scope.mbScroll();
+                }
 
                 var pct = -newMargin / length;
 
@@ -138,9 +149,9 @@ angular.module('mb-scrollbar', [])
 
                 })();
 
-				// Bug that the containerSize is not known at the initialisation of the script. After a recalculate it is known, update and use it.
-				containerSize = ifVertElseHor( element[0].offsetHeight, element[0].offsetWidth);
-				
+                // Bug that the containerSize is not known at the initialisation of the script. After a recalculate it is known, update and use it.
+                containerSize = ifVertElseHor( element[0].offsetHeight, element[0].offsetWidth);
+
                 // A higher drag-speed modifier on longer container sizes makes for more comfortable scrolling
                 config.dragSpeedModifier = Math.max(1, 1 / ( scrollbarLength / containerSize ));
 
@@ -162,8 +173,8 @@ angular.module('mb-scrollbar', [])
                 scrollbarLength = ( containerSize / length ) * containerSize - config.scrollbar.margin * 2;
                 scrollbar.css(config.dimension, scrollbarLength + 'px');
                 scrollbar.css('transition', 'opacity .3s ease-in-out, border-radius .1s linear, ' +
-                    config.rDimension+' .1s linear, ' +
-                    config.rPosition+' .1s linear');
+                              config.rDimension+' .1s linear, ' +
+                              config.rPosition+' .1s linear');
 
                 // Scroll to the start, end, or a pixel value given in the config. If null, just stay there
                 if (config.scrollTo == null)
@@ -176,124 +187,143 @@ angular.module('mb-scrollbar', [])
                     scrollTo( -parseInt(config.scrollTo) ); // Negative to account for the negative margin
             };
 
-            // listen to DOM modification, IE11+, FF, Chrome, Safari
-            // @added new MutationObserver
-            if (typeof MutationObserver === 'function' ) {
-                var observer = new MutationObserver(function (mutations) {
-                    // delay recalculation, prevent recalculation before animation ends
-                    setTimeout(function () { recalculate(); }, 200);
-                });
-                observer.observe(element[0], {
-                    childList: true,
-                    subtree: true,
-                    characterData: true,
-                    attributes: true
-                });
-            } else {
-                // fallback compatibility
-                if(config.autoResize === true) {
-                    child.on('DOMNodeInserted', recalculate);
-                    child.on('DOMNodeRemoved', recalculate);
-                } 
-            }
-
             // Listen to manual recalculate calls
             scope.$on('recalculateMBScrollbars', function(event) {
                 setTimeout(function() {
                     recalculate();
                 }, 5);
             });
-            
+
             scope.$on('scrollToMBScrollbars', function (event, offset) {
-            	setTimeout(function () {
-            		scrollTo(offset);
-            	}, 5);
+                setTimeout(function () {
+                    scrollTo(offset);
+                }, 5);
             });
 
-            // Move on scroll
-            child.on('mousewheel', function(event) {
-                event.preventDefault();
-
-                // If jQuery hid the original event, retrieve it
-                if( event.originalEvent != undefined )
-                    event = event.originalEvent;
-
-                var delta = ifVertElseHor(event.wheelDeltaY || event.wheelDelta, event.wheelDeltaX || event.wheelDeltaY || event.wheelDelta);
-
-                scroll( delta );
+            scope.$on('startScrollListening', function (event) {
+                setTimeout(function () {
+                    startListening();
+                }, 5);
             });
-            if( window.navigator.userAgent.toLowerCase().indexOf('firefox') >= 0) {
-                child.on('wheel', function(event) {
+
+            scope.$on('stopScrollListening', function (event) {
+                setTimeout(function () {
+                    stopListening();
+                }, 5);
+            });
+            var observer;
+            function startListening() {
+
+                // listen to DOM modification, IE11+, FF, Chrome, Safari
+                // @added new MutationObserver
+                if (typeof MutationObserver === 'function' ) {
+                    observer = new MutationObserver(function (mutations) {
+                        // delay recalculation, prevent recalculation before animation ends
+                        setTimeout(function () { recalculate(); }, 200);
+                    });
+                    observer.observe(element[0], {
+                        childList: true,
+                        subtree: true,
+                        characterData: true,
+                        attributes: true
+                    });
+                } else {
+                    // fallback compatibility
+                    if(config.autoResize === true) {
+                        child.on('DOMNodeInserted', recalculate);
+                        child.on('DOMNodeRemoved', recalculate);
+                    }
+                }
+
+                // Move on scroll
+                child.on('mousewheel', function(event) {
                     event.preventDefault();
 
                     // If jQuery hid the original event, retrieve it
                     if( event.originalEvent != undefined )
                         event = event.originalEvent;
 
-                    var delta = ifVertElseHor(event.deltaY, event.deltaX > 0 ? event.deltaX : event.deltaY);
+                    var delta = ifVertElseHor(event.wheelDeltaY || event.wheelDelta, event.wheelDeltaX || event.wheelDeltaY || event.wheelDelta);
 
-                    scroll( - delta * config.firefoxModifier );
+                    scroll( delta );
+                });
+                if( window.navigator.userAgent.toLowerCase().indexOf('firefox') >= 0) {
+                    child.on('wheel', function(event) {
+                        event.preventDefault();
+
+                        // If jQuery hid the original event, retrieve it
+                        if( event.originalEvent != undefined )
+                            event = event.originalEvent;
+
+                        var delta = ifVertElseHor(event.deltaY, event.deltaX > 0 ? event.deltaX : event.deltaY);
+
+                        scroll( - delta * config.firefoxModifier );
+                        return false;
+                    });
+                }
+
+                // Scrollbar controls
+                var scrollbarMousedown, scrollbarOffset;
+                scrollbar.on('mousedown', function(event) {
+                    event.preventDefault();
+                    scrollbarMousedown = true;
+
+                    // Set mouseup listener
+                    angular.element(document).on('mouseup', function() {
+                        scrollbarMousedown = false;
+                        if(!config.scrollbar.show)
+                            hideScrollbar();
+                    });
+
+                    scrollbarOffset = ifVertElseHor(event.screenY, event.screenX);
                     return false;
                 });
-            }
+                angular.element(document).on('mousemove', function(event) {
+                    if(!scrollbarMousedown) return;
+                    event.preventDefault();
 
-            // Scrollbar controls
-            var scrollbarMousedown, scrollbarOffset;
-            scrollbar.on('mousedown', function(event) {
-                event.preventDefault();
-                scrollbarMousedown = true;
+                    var delta = ifVertElseHor(event.screenY, event.screenX) - scrollbarOffset;
+                    delta *= config.dragSpeedModifier;
+                    scrollbarOffset += delta * (scrollbarLength / containerSize);
 
-                // Set mouseup listener
-                angular.element(document).on('mouseup', function() {
-                    scrollbarMousedown = false;
-                    if(!config.scrollbar.show)
+                    scroll( -delta );
+                });
+
+                // Show scrollbar on hover
+                if(!config.scrollbar.show) {
+                    element.on('mouseenter', showScrollbar);
+                    scrollbarContainer.on('mouseenter', showScrollbar);
+                    element.on('mouseleave', function() {
+                        if(scrollbarMousedown) return;
                         hideScrollbar();
+                    });
+                }
+
+                // On enter scrollbar container
+                scrollbarContainer.on('mouseenter', function() {
+                    scrollbarContainer.css('background', config.scrollbarContainer.color);
+                    scrollbar.css( config.rDimension, config.scrollbar.hoverWidth+'px' );
+                    scrollbar.css( config.rPosition, config.scrollbar.hoverMargin +'px' );
+                    scrollbar.css( 'border-radius', config.scrollbar.hoverWidth / 2 + 'px' );
                 });
-
-                scrollbarOffset = ifVertElseHor(event.screenY, event.screenX);
-                return false;
-            });
-            angular.element(document).on('mousemove', function(event) {
-                if(!scrollbarMousedown) return;
-                event.preventDefault();
-
-                var delta = ifVertElseHor(event.screenY, event.screenX) - scrollbarOffset;
-                delta *= config.dragSpeedModifier;
-                scrollbarOffset += delta * (scrollbarLength / containerSize);
-
-                scroll( -delta );
-            });
-
-            // Show scrollbar on hover
-            if(!config.scrollbar.show) {
-                element.on('mouseenter', showScrollbar);
-                scrollbarContainer.on('mouseenter', showScrollbar);
-                element.on('mouseleave', function() {
-                    if(scrollbarMousedown) return;
-                    hideScrollbar();
+                scrollbarContainer.on('mouseleave', function() {
+                    scrollbarContainer.css('background', 'none');
+                    scrollbar.css( config.rDimension, config.scrollbar.width + 'px' );
+                    scrollbar.css( config.rPosition, config.scrollbar.margin+'px' );
+                    scrollbar.css( 'border-radius', config.scrollbar.width / 2 +'px' );
                 });
             }
 
-            // On enter scrollbar container
-            scrollbarContainer.on('mouseenter', function() {
-                scrollbarContainer.css('background', config.scrollbarContainer.color);
-                scrollbar.css( config.rDimension, config.scrollbar.hoverWidth+'px' );
-                scrollbar.css( config.rPosition, config.scrollbar.hoverMargin +'px' );
-                scrollbar.css( 'border-radius', config.scrollbar.hoverWidth / 2 + 'px' );
-            });
-            scrollbarContainer.on('mouseleave', function() {
-                scrollbarContainer.css('background', 'none');
-                scrollbar.css( config.rDimension, config.scrollbar.width + 'px' );
-                scrollbar.css( config.rPosition, config.scrollbar.margin+'px' );
-                scrollbar.css( 'border-radius', config.scrollbar.width / 2 +'px' );
-            });
+            function stopListening() {
+                observer.disconnect();
+            }
 
             // Initial calculate
             recalculate();
         }
     }
 })
-.service('mbScrollbar', function() {
+    .service('mbScrollbar', function() {
     // Provide a method that wraps the broadcast in a timeout, which allows use inside Controllers
     this.recalculate = function($scope) {
         setTimeout(function() {
@@ -301,8 +331,18 @@ angular.module('mb-scrollbar', [])
         }, 5);
     };
     this.scrollTo = function ($scope, event) {
-    	 setTimeout(function() {
-             $scope.$broadcast('scrollToMBScrollbars', event);
-         }, 5);
+        setTimeout(function() {
+            $scope.$broadcast('scrollToMBScrollbars', event);
+        }, 5);
+    };
+    this.startListening = function ($scope, event) {
+        setTimeout(function() {
+            $scope.$broadcast('startScrollListening');
+        }, 5);
+    };
+    this.stopListening = function ($scope, event) {
+        setTimeout(function() {
+            $scope.$broadcast('stopScrollListening');
+        }, 5);
     };
 });
